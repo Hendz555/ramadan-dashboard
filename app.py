@@ -129,9 +129,6 @@ def search_youtube(keyword, language, api_key):
 st.title("📡 رادار ترجمات مسلسلات رمضان 2026")
 st.markdown("---")
 
-if not youtube_key and not news_key:
-    st.warning("⚠️ أدخل مفتاح API في الشريط الجانبي لبدء الرصد")
-
 if uploaded_file:
     df = pd.read_excel(uploaded_file)
     
@@ -159,7 +156,13 @@ if uploaded_file:
     )
     
     if st.button("🚀 ابدأ الرصد", type="primary"):
-        if youtube_key or news_key:
+        if not youtube_key and not news_key:
+            st.error("⚠️ أدخل مفتاح API في الشريط الجانبي أولاً")
+        elif not selected_series:
+            st.error("⚠️ اختر مسلسل واحد على الأقل")
+        elif not selected_langs:
+            st.error("⚠️ اختر لغة واحدة على الأقل")
+        else:
             progress = st.progress(0)
             status = st.empty()
             
@@ -197,8 +200,8 @@ if uploaded_file:
             status.success(f"✅ تم جلب {len(st.session_state.results)} نتيجة")
             time.sleep(1)
             st.rerun()
-        else:
-            st.error("⚠️ أدخل مفتاح API أولاً")
+else:
+    st.info("👆 ارفع ملف Excel من الشريط الجانبي للبدء")
 
 if st.session_state.results:
     st.markdown("---")
@@ -243,8 +246,6 @@ if st.session_state.results:
             with st.spinner("جاري الترجمة..."):
                 trans = translate_text(row['Content'], i)
                 st.info(f"**الترجمة:** {trans}")
-else:
-    st.info("👆 ارفع ملف Excel وأدخل API Key واضغط 'ابدأ الرصد'")
 
 st.markdown("---")
 st.markdown(
