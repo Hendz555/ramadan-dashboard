@@ -64,14 +64,19 @@ with st.sidebar:
         type="password",
         help="احصل عليه من newsapi.org"
     )
+    twitter_bearer = st.text_input(
+        "Twitter Bearer Token", 
+        type="password",
+        help="احصل عليه من developer.twitter.com"
+    )
     
     st.divider()
     uploaded_file = st.file_uploader("ارفع ملف الإكسل", type=['xlsx'])
     
     platforms = st.multiselect(
         "المنصات:",
-        ["YouTube", "News"],
-        default=["YouTube"]
+        ["Twitter/X", "YouTube", "News"],
+        default=["Twitter/X"]
     )
     
     st.divider()
@@ -92,17 +97,102 @@ def translate_text(text, index):
     except:
         return "خطأ في الترجمة"
 
+def search_twitter(keyword, language, bearer_token):
+    """البحث في Twitter/X"""
+    results = []
+    if not bearer_token:
+        return results
+    
+    try:
+        url = "https://api.twitter.com/2/tweets/search/recent"
+        
+        if len(keyword.split()) > 1:
+            search_query = f'"{keyword}"'
+        else:
+            search_query = keyword
+        
+        headers = {
+            "Authorization": f"Bearer {bearer_token}"
+        }
+        
+        params = {
+            "query": search_query,
+            "max_results": 10,
+            "tweet.fields": "created_at,public_metrics,author_id",
+            "expansions": "author_id",
+            "user.fields": "username"
+        }
+        
+        response = requests.get(url, headers=headers, params=params, timeout=10)
+        data = response.json()
+        
+        if 'data' in data:
+            users = {user['id']: user['username'] for user in data.get('includes', {}).get('users', [])}
+            
+            for tweet in data['data']:
+                author_id = tweet.get('author_id', '')
+                username = users.get(author_id, 'unknown')
+                
+                results.append({
+                    "Platform": "Twitter/X",
+                    "Keyword": keyword,
+                    "Language": language,
+                    "Content": tweet.get('text', ''),
+                    "Link": f"https://twitter.com/{username}/status/{tweet['id']}",
+                    "Date": tweet.get('created_at', datetime.now().strftime("%Y-%m-%d %H:%M")),
+                    "Engagement": f"❤️ {tweet.get('public_metrics', {}).get('like_count', 0)} | 🔁 {tweet.get('public_metrics', {}).get('retweet_count', 0)}"
+                })
+    except Exception as e:
+        st.warning(f"خطأ في Twitter: {str(e)}")
+    
+    return results
+
+def get_youtube_comments(video_id, api_key, max_comments=5):
+    """جلب التعليقات من فيديو YouTube"""
+    comments = []
+    try:
+        url = "https://www.googleapis.com/youtube/v3/commentThreads"
+        params = {
+            'part': 'snippet',
+            'videoId': video_id,
+            'maxResults': max_comments,
+            'order': 'relevance',
+            'key': api_key
+        }
+        
+        response = requests.get(url, params=params, timeout=10)
+        data = response.json()
+        
+        if 'items' in data:
+            for item in data['items']:
+                comment = item['snippet']['topLevelComment']['snippet']
+                comments.append({
+                    'text': comment.get('textDisplay', ''),
+                    'author': comment.get('authorDisplayName', ''),
+                    'likes': comment.get('likeCount', 0)
+                })
+    except:
+        pass
+    
+    return comments
+
 def search_youtube(keyword, language, api_key):
     results = []
     if not api_key:
         return results
     try:
         url = "https://www.googleapis.com/youtube/v3/search"
+        
+        if len(keyword.split()) > 1:
+            search_query = f'"{keyword}"'
+        else:
+            search_query = keyword
+        
         params = {
             'part': 'snippet',
-            'q': keyword,
+            'q': search_query,
             'type': 'video',
-            'maxResults': 5,
+            'maxResults': 3,
             'key': api_key
         }
         response = requests.get(url, params=params, timeout=10)
@@ -114,14 +204,33 @@ def search_youtube(keyword, language, api_key):
                 title = item['snippet'].get('title', '')
                 description = item['snippet'].get('description', '')[:100]
                 
+                # إضافة الفيديو نفسه
                 results.append({
                     "Platform": "YouTube",
+                    "Type": "Video",
                     "Keyword": keyword,
                     "Language": language,
                     "Content": f"{title} - {description}",
                     "Link": f"https://www.youtube.com/watch?v={video_id}",
                     "Date": datetime.now().strftime("%Y-%m-%d %H:%M")
                 })
+                
+                # جلب التعليقات
+                comments = get_youtube_comments(video_id, api_key, max_comments=3)
+                for comment in comments:
+                    results.append({
+                        "Platform": "YouTube",
+                        "Type": "Comment",
+                        "Keyword": keyword,
+                        "Language": language,
+                        "Content": f"💬 {comment['text'][:200]}",
+                        "Link": f"https://www.youtube.com/watch?v={video_id}",
+                        "Date": datetime.now().strftime("%Y-%m-%d %H:%M"),
+                        "Engagement": f"👤 {comment['author']} | 👍 {comment['likes']}"
+                    })
+                
+                time.sleep(0.5)
+                
     except Exception as e:
         st.warning(f"خطأ في YouTube: {str(e)}")
     return results
@@ -129,7 +238,7 @@ def search_youtube(keyword, language, api_key):
 st.title("📡 رادار ترجمات مسلسلات رمضان 2026")
 st.markdown("---")
 
-if not youtube_key and not news_key:
+if not youtube_key and not news_key and not twitter_bearer:
     st.warning("⚠️ أدخل مفتاح API في الشريط الجانبي لبدء الرصد")
 
 if uploaded_file:
@@ -138,16 +247,7 @@ if uploaded_file:
     with st.expander("عرض الكلمات المفتاحية"):
         st.dataframe(df.head())
     
-    # المسلسلات من الصفوف (العمود الأول)
-    series_names = df.iloc[:, 0].dropna().tolist()
-    selected_series = st.multiselect(
-        "اختر المسلسلات:", 
-        series_names, 
-        default=series_names[:2] if len(series_names)>=2 else series_names
-    )
-    
-    # اللغات من الأعمدة
-    languages = [col for col in df.columns[1:] if 'Unnamed' not in str(col)]
+    languages = [col for col in df.columns if 'Unnamed' not in col]
     selected_langs = st.multiselect(
         "اختر اللغات:", 
         languages, 
@@ -155,7 +255,7 @@ if uploaded_file:
     )
     
     if st.button("🚀 ابدأ الرصد", type="primary"):
-        if youtube_key or news_key:
+        if youtube_key or news_key or twitter_bearer:
             progress = st.progress(0)
             status = st.empty()
             
@@ -171,13 +271,17 @@ if uploaded_file:
                         for keyword in keywords[:2]:
                             status.text(f"🔍 {keyword} ({lang})")
                             
+                            if "Twitter/X" in platforms and twitter_bearer:
+                                new_res = search_twitter(keyword, lang, twitter_bearer)
+                                st.session_state.results.extend(new_res)
+                            
                             if "YouTube" in platforms and youtube_key:
                                 new_res = search_youtube(keyword, lang, youtube_key)
                                 st.session_state.results.extend(new_res)
                             
                             current += 1
                             progress.progress(min(current/total, 1.0))
-                            time.sleep(1)
+                            time.sleep(2)
             
             status.success(f"✅ تم جلب {len(st.session_state.results)} نتيجة")
             time.sleep(1)
@@ -214,11 +318,15 @@ if st.session_state.results:
         filtered_df = filtered_df[filtered_df['Platform'].isin(plat_filter)]
     
     for i, row in filtered_df.iterrows():
+        type_badge = f"<span style='background:#4CAF50;padding:3px 8px;border-radius:5px;font-size:11px;'>{row.get('Type', '')}</span>" if 'Type' in row else ""
+        engagement_text = f"<p><strong>التفاعل:</strong> {row.get('Engagement', '')}</p>" if 'Engagement' in row and row['Engagement'] else ""
+        
         st.markdown(f"""
         <div class="result-card">
-            <h4>📺 {row['Platform']} | 🌐 {row['Language']}</h4>
+            <h4>📺 {row['Platform']} {type_badge} | 🌐 {row['Language']}</h4>
             <p><strong>الكلمة المفتاحية:</strong> {row['Keyword']}</p>
             <p>{row['Content'][:250]}</p>
+            {engagement_text}
             <p><small>📅 {row['Date']}</small></p>
             <a href="{row['Link']}" target="_blank">🔗 عرض المصدر</a>
         </div>
