@@ -54,8 +54,16 @@ with st.sidebar:
     st.divider()
     
     st.subheader("🔑 مفاتيح API")
-    youtube_key = st.text_input("YouTube API Key", type="AIzaSyDnhSmVac0ic9yt3OregsSgZYZwXUUvOTU")
-    news_key = st.text_input("NewsAPI Key", type="1aa5d0dd3775438a8e573ee6ed184ee0")
+    youtube_key = st.text_input(
+        "YouTube API Key", 
+        type="password",
+        help="احصل عليه من console.cloud.google.com"
+    )
+    news_key = st.text_input(
+        "NewsAPI Key", 
+        type="password",
+        help="احصل عليه من newsapi.org"
+    )
     
     st.divider()
     uploaded_file = st.file_uploader("ارفع ملف الإكسل", type=['xlsx'])
@@ -104,33 +112,38 @@ def search_youtube(keyword, language, api_key):
             for item in data['items']:
                 video_id = item['id'].get('videoId', '')
                 title = item['snippet'].get('title', '')
+                description = item['snippet'].get('description', '')[:100]
                 
                 results.append({
                     "Platform": "YouTube",
                     "Keyword": keyword,
                     "Language": language,
-                    "Content": title,
+                    "Content": f"{title} - {description}",
                     "Link": f"https://www.youtube.com/watch?v={video_id}",
                     "Date": datetime.now().strftime("%Y-%m-%d %H:%M")
                 })
-    except:
-        pass
+    except Exception as e:
+        st.warning(f"خطأ في YouTube: {str(e)}")
     return results
 
 st.title("📡 رادار ترجمات مسلسلات رمضان 2026")
 st.markdown("---")
 
 if not youtube_key and not news_key:
-    st.warning("⚠️ أدخل مفتاح API في الشريط الجانبي")
+    st.warning("⚠️ أدخل مفتاح API في الشريط الجانبي لبدء الرصد")
 
 if uploaded_file:
     df = pd.read_excel(uploaded_file)
     
-    with st.expander("الكلمات المفتاحية"):
+    with st.expander("عرض الكلمات المفتاحية"):
         st.dataframe(df.head())
     
     languages = [col for col in df.columns if 'Unnamed' not in col]
-    selected_langs = st.multiselect("اللغات:", languages, default=languages[:2] if len(languages)>=2 else languages)
+    selected_langs = st.multiselect(
+        "اختر اللغات:", 
+        languages, 
+        default=languages[:2] if len(languages)>=2 else languages
+    )
     
     if st.button("🚀 ابدأ الرصد", type="primary"):
         if youtube_key or news_key:
@@ -157,33 +170,60 @@ if uploaded_file:
                             progress.progress(min(current/total, 1.0))
                             time.sleep(1)
             
-            status.success(f"✅ تم! {len(st.session_state.results)} نتيجة")
+            status.success(f"✅ تم جلب {len(st.session_state.results)} نتيجة")
             time.sleep(1)
             st.rerun()
+        else:
+            st.error("⚠️ أدخل مفتاح API أولاً")
 
 if st.session_state.results:
     st.markdown("---")
     
     col1, col2, col3 = st.columns(3)
     with col1:
-        st.markdown(f'<div class="stats-box"><h2>{len(st.session_state.results)}</h2><p>النتائج</p></div>', unsafe_allow_html=True)
+        st.markdown(f'<div class="stats-box"><h2>{len(st.session_state.results)}</h2><p>إجمالي النتائج</p></div>', unsafe_allow_html=True)
+    with col2:
+        unique_langs = len(set([r['Language'] for r in st.session_state.results]))
+        st.markdown(f'<div class="stats-box"><h2>{unique_langs}</h2><p>عدد اللغات</p></div>', unsafe_allow_html=True)
+    with col3:
+        unique_platforms = len(set([r['Platform'] for r in st.session_state.results]))
+        st.markdown(f'<div class="stats-box"><h2>{unique_platforms}</h2><p>عدد المنصات</p></div>', unsafe_allow_html=True)
     
-    st.subheader("📊 النتائج")
+    st.subheader("📊 نتائج الرصد")
     res_df = pd.DataFrame(st.session_state.results)
     
-    for i, row in res_df.iterrows():
+    c1, c2 = st.columns(2)
+    with c1:
+        lang_filter = st.multiselect("فلتر باللغة", res_df['Language'].unique())
+    with c2:
+        plat_filter = st.multiselect("فلتر بالمنصة", res_df['Platform'].unique())
+    
+    filtered_df = res_df.copy()
+    if lang_filter:
+        filtered_df = filtered_df[filtered_df['Language'].isin(lang_filter)]
+    if plat_filter:
+        filtered_df = filtered_df[filtered_df['Platform'].isin(plat_filter)]
+    
+    for i, row in filtered_df.iterrows():
         st.markdown(f"""
         <div class="result-card">
             <h4>📺 {row['Platform']} | 🌐 {row['Language']}</h4>
-            <p><strong>{row['Keyword']}</strong></p>
-            <p>{row['Content'][:200]}</p>
-            <a href="{row['Link']}" target="_blank">🔗 المصدر</a>
+            <p><strong>الكلمة المفتاحية:</strong> {row['Keyword']}</p>
+            <p>{row['Content'][:250]}</p>
+            <p><small>📅 {row['Date']}</small></p>
+            <a href="{row['Link']}" target="_blank">🔗 عرض المصدر</a>
         </div>
         """, unsafe_allow_html=True)
         
-        if st.button("🔄 ترجم", key=f"t_{i}"):
-            with st.spinner("..."):
+        if st.button("🔄 ترجم للعربية", key=f"trans_{i}"):
+            with st.spinner("جاري الترجمة..."):
                 trans = translate_text(row['Content'], i)
-                st.info(trans)
+                st.info(f"**الترجمة:** {trans}")
 else:
-    st.info("ارفع ملف Excel واضغط ابدأ الرصد")
+    st.info("👆 ارفع ملف Excel وأدخل API Key واضغط 'ابدأ الرصد'")
+
+st.markdown("---")
+st.markdown(
+    "<div style='text-align: center; color: gray;'>Made with ❤️ for Ramadan 2026 Monitoring</div>",
+    unsafe_allow_html=True
+)
