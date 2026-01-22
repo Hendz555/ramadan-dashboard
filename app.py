@@ -138,11 +138,24 @@ if uploaded_file:
     with st.expander("عرض الكلمات المفتاحية"):
         st.dataframe(df.head())
     
-    languages = [col for col in df.columns if 'Unnamed' not in col]
+    # المسلسلات من العمود الأول (الصفوف)
+    series_list = df.iloc[:, 0].dropna().tolist()
+    
+    # اللغات من أسماء الأعمدة (بعد العمود الأول)
+    languages = [col for col in df.columns[1:] if 'Unnamed' not in str(col)]
+    
+    # اختيار المسلسلات
+    selected_series = st.multiselect(
+        "اختر المسلسلات:",
+        series_list,
+        default=series_list[:2] if len(series_list) >= 2 else series_list
+    )
+    
+    # اختيار اللغات
     selected_langs = st.multiselect(
         "اختر اللغات:", 
         languages, 
-        default=languages[:2] if len(languages)>=2 else languages
+        default=languages[:2] if len(languages) >= 2 else languages
     )
     
     if st.button("🚀 ابدأ الرصد", type="primary"):
@@ -150,10 +163,16 @@ if uploaded_file:
             progress = st.progress(0)
             status = st.empty()
             
-            total = len(df) * len(selected_langs)
+            total = len(selected_series) * len(selected_langs)
             current = 0
             
-            for _, row in df.iterrows():
+            for series in selected_series:
+                # جلب الصف الخاص بالمسلسل
+                row = df[df.iloc[:, 0] == series].iloc[0] if not df[df.iloc[:, 0] == series].empty else None
+                
+                if row is None:
+                    continue
+                
                 for lang in selected_langs:
                     keywords_raw = str(row.get(lang, ''))
                     if keywords_raw and keywords_raw != 'nan':
