@@ -60,13 +60,18 @@ with st.sidebar:
         type="password",
         help="احصل عليه من console.cloud.google.com"
     )
+    news_key = st.text_input(
+        "NewsAPI Key", 
+        type="password",
+        help="احصل عليه من newsapi.org"
+    )
     
     st.divider()
     uploaded_file = st.file_uploader("📄 ارفع ملف الإكسل", type=['xlsx'])
     
     platforms = st.multiselect(
         "🌐 المنصات:",
-        ["YouTube"],  # سنضيف Twitter/X لاحقاً
+        ["YouTube", "News"],
         default=["YouTube"]
     )
     
@@ -96,17 +101,15 @@ def search_youtube(series_name, keyword, language, api_key):
     
     try:
         url = "https://www.googleapis.com/youtube/v3/search"
-        
-        # بناء استعلام بحث أفضل
         search_query = f'"{keyword}" OR "{series_name}" {language}'
         
         params = {
             'part': 'snippet',
             'q': search_query,
             'type': 'video',
-            'maxResults': 3,  # أقل عشان نخلص أسرع
+            'maxResults': 3,
             'key': api_key,
-            'order': 'date',  # الأحدث أولاً
+            'order': 'date',
             'relevanceLanguage': language if len(language) == 2 else 'ar'
         }
         
@@ -121,7 +124,7 @@ def search_youtube(series_name, keyword, language, api_key):
                 
                 results.append({
                     "Platform": "YouTube",
-                    "Series": series_name,  # ← اسم المسلسل
+                    "Series": series_name,
                     "Keyword": keyword,
                     "Language": language,
                     "Content": f"{title} - {description}",
@@ -133,26 +136,61 @@ def search_youtube(series_name, keyword, language, api_key):
     
     return results
 
+def search_news(series_name, keyword, language, api_key):
+    """بحث في NewsAPI"""
+    results = []
+    if not api_key:
+        return results
+    
+    try:
+        url = "https://newsapi.org/v2/everything"
+        
+        params = {
+            'q': keyword,
+            'apiKey': api_key,
+            'pageSize': 5,
+            'sortBy': 'publishedAt',
+            'language': language if len(language) == 2 else 'ar'
+        }
+        
+        response = requests.get(url, params=params, timeout=10)
+        data = response.json()
+        
+        if data.get('status') == 'ok' and 'articles' in data:
+            for article in data['articles']:
+                results.append({
+                    "Platform": "News",
+                    "Series": series_name,
+                    "Keyword": keyword,
+                    "Language": language,
+                    "Content": f"{article.get('title', '')} - {article.get('description', '')[:150]}",
+                    "Link": article.get('url', ''),
+                    "Date": article.get('publishedAt', datetime.now().strftime("%Y-%m-%d %H:%M"))
+                })
+    except Exception as e:
+        st.warning(f"⚠️ خطأ في News ({series_name}): {str(e)}")
+    
+    return results
+
 st.title("📡 رادار ترجمات مسلسلات رمضان 2026")
 st.markdown("---")
 
-if not youtube_key:
-    st.warning("⚠️ أدخل مفتاح YouTube API في الشريط الجانبي")
+if not youtube_key and not news_key:
+    st.warning("⚠️ أدخل مفتاح API واحد على الأقل في الشريط الجانبي")
 
 if uploaded_file:
-    # قراءة الملف
     df = pd.read_excel(uploaded_file)
     
     # استخراج أسماء المسلسلات (الصف الأول)
-    series_names = df.iloc[0, 1:].dropna().tolist()  # أول صف من العمود الثاني فصاعداً
+    series_names = df.iloc[0, 1:].dropna().tolist()
     
-    # استخراج اللغات (أسماء الأعمدة بعد الأول)
+    # استخراج اللغات (أسماء الأعمدة)
     languages = [col for col in df.columns[1:] if 'Unnamed' not in str(col)]
     
     with st.expander("📊 عرض البيانات"):
         st.dataframe(df.head(10))
     
-    # **الفلاتر الجديدة** ✅
+    # الفلاتر
     col1, col2 = st.columns(2)
     
     with col1:
@@ -171,41 +209,40 @@ if uploaded_file:
             help="اختر اللغات المطلوب رصدها"
         )
     
-    # زر البدء
     if st.button("🚀 ابدأ الرصد", type="primary", use_container_width=True):
-        if youtube_key and selected_series and selected_langs:
+        if (youtube_key or news_key) and selected_series and selected_langs:
             progress = st.progress(0)
             status = st.empty()
             
             total = len(selected_series) * len(selected_langs)
             current = 0
             
-            # الحلقة الرئيسية
             for series_name in selected_series:
-                # البحث عن الصف الخاص بهذا المسلسل
                 series_row = df[df.iloc[:, 1] == series_name]
                 
                 if series_row.empty:
                     continue
                 
                 for lang in selected_langs:
-                    # جلب الكلمات المفتاحية من الخلية المناسبة
                     if lang in df.columns:
                         keywords_raw = series_row[lang].values[0] if not series_row[lang].empty else ''
                         keywords_raw = str(keywords_raw)
                         
                         if keywords_raw and keywords_raw != 'nan':
-                            # فصل الكلمات المفتاحية
                             keywords = [k.strip() for k in keywords_raw.split(',') if k.strip()]
                             
-                            for keyword in keywords[:2]:  # أول كلمتين فقط
+                            for keyword in keywords[:2]:
                                 status.text(f"🔍 {series_name} | {keyword} ({lang})")
                                 
                                 if "YouTube" in platforms and youtube_key:
                                     new_res = search_youtube(series_name, keyword, lang, youtube_key)
                                     st.session_state.results.extend(new_res)
                                 
-                                time.sleep(1.5)  # تأخير أطول لتجنب Rate Limit
+                                if "News" in platforms and news_key:
+                                    new_res = search_news(series_name, keyword, lang, news_key)
+                                    st.session_state.results.extend(new_res)
+                                
+                                time.sleep(1.5)
                     
                     current += 1
                     progress.progress(min(current / total, 1.0))
@@ -216,14 +253,13 @@ if uploaded_file:
         else:
             st.error("⚠️ اختر مسلسلات ولغات وأدخل API Key")
 
-# **عرض النتائج مع الفلاتر الجديدة** ✅
+# عرض النتائج
 if st.session_state.results:
     st.markdown("---")
     
-    # الإحصائيات
-    col1, col2, col3 = st.columns(3)
-    
     res_df = pd.DataFrame(st.session_state.results)
+    
+    col1, col2, col3 = st.columns(3)
     
     with col1:
         st.markdown(f'<div class="stats-box"><h2>{len(res_df)}</h2><p>إجمالي النتائج</p></div>', unsafe_allow_html=True)
@@ -236,31 +272,15 @@ if st.session_state.results:
     
     st.subheader("📊 نتائج الرصد")
     
-    # **الفلاتر لعرض النتائج** ✅
     c1, c2, c3 = st.columns(3)
     
     with c1:
-        series_filter = st.multiselect(
-            "🎬 فلتر بالمسلسل", 
-            res_df['Series'].unique(),
-            help="اختر مسلسل معين"
-        )
-    
+        series_filter = st.multiselect("🎬 فلتر بالمسلسل", res_df['Series'].unique())
     with c2:
-        lang_filter = st.multiselect(
-            "🌍 فلتر باللغة", 
-            res_df['Language'].unique(),
-            help="اختر لغة معينة"
-        )
-    
+        lang_filter = st.multiselect("🌍 فلتر باللغة", res_df['Language'].unique())
     with c3:
-        plat_filter = st.multiselect(
-            "📱 فلتر بالمنصة", 
-            res_df['Platform'].unique(),
-            help="اختر منصة معينة"
-        )
+        plat_filter = st.multiselect("📱 فلتر بالمنصة", res_df['Platform'].unique())
     
-    # تطبيق الفلاتر
     filtered_df = res_df.copy()
     
     if series_filter:
@@ -272,7 +292,6 @@ if st.session_state.results:
     
     st.info(f"📋 عرض {len(filtered_df)} من {len(res_df)} نتيجة")
     
-    # عرض النتائج
     for i, row in filtered_df.iterrows():
         st.markdown(f"""
         <div class="result-card">
