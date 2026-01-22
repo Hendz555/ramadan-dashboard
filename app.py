@@ -129,92 +129,52 @@ def search_youtube(keyword, language, api_key):
 st.title("📡 رادار ترجمات مسلسلات رمضان 2026")
 st.markdown("---")
 
+if not youtube_key and not news_key:
+    st.warning("⚠️ أدخل مفتاح API في الشريط الجانبي لبدء الرصد")
+
 if uploaded_file:
     df = pd.read_excel(uploaded_file)
     
     with st.expander("عرض الكلمات المفتاحية"):
         st.dataframe(df.head())
     
-    # اللغات = أسماء الأعمدة (بعد العمود الأول)
-    languages = [col for col in df.columns[1:] if 'Unnamed' not in str(col)]
-    
-    # المسلسلات = القيم في العمود الأول (تخطي الصف الأول إذا كان عناوين)
-    series_list = df.iloc[1:, 0].dropna().tolist()
-    
-    # إذا كان العمود الأول فاضي، استخدم كل الصفوف
-    if not series_list:
-        series_list = df.iloc[:, 0].dropna().tolist()
-    
-    # اختيار المسلسلات
-    selected_series = st.multiselect(
-        "اختر المسلسلات:",
-        series_list,
-        default=series_list[:3] if len(series_list) >= 3 else series_list
-    )
-    
-    # اختيار اللغات
+    languages = [col for col in df.columns if 'Unnamed' not in col]
     selected_langs = st.multiselect(
         "اختر اللغات:", 
         languages, 
-        default=languages[:2] if len(languages) >= 2 else languages
+        default=languages[:2] if len(languages)>=2 else languages
     )
     
     if st.button("🚀 ابدأ الرصد", type="primary"):
-        if not youtube_key and not news_key:
-            st.error("⚠️ أدخل مفتاح API في الشريط الجانبي أولاً")
-        elif not selected_series:
-            st.error("⚠️ اختر مسلسل واحد على الأقل")
-        elif not selected_langs:
-            st.error("⚠️ اختر لغة واحدة على الأقل")
-        else:
+        if youtube_key or news_key:
             progress = st.progress(0)
             status = st.empty()
             
-            total = len(selected_series) * len(selected_langs)
+            total = len(df) * len(selected_langs)
             current = 0
             
-            # لكل مسلسل محدد
-            for series in selected_series:
-                # البحث عن الصف - جرب الطريقتين
-                series_row = df[df.iloc[:, 0] == series]
-                
-                if series_row.empty:
-                    # جرب البحث في كل الأعمدة
-                    series_row = df[df.eq(series).any(axis=1)]
-                
-                if series_row.empty:
-                    st.warning(f"⚠️ لم يتم العثور على {series}")
-                    continue
-                
-                # لكل لغة محددة
+            for _, row in df.iterrows():
                 for lang in selected_langs:
-                    if lang in df.columns:
-                        # الحصول على الكلمات المفتاحية
-                        try:
-                            keywords_raw = str(series_row[lang].iloc[0])
-                        except:
-                            keywords_raw = ''
+                    keywords_raw = str(row.get(lang, ''))
+                    if keywords_raw and keywords_raw != 'nan':
+                        keywords = [k.strip() for k in keywords_raw.split(',') if k.strip()]
                         
-                        if keywords_raw and keywords_raw != 'nan':
-                            keywords = [k.strip() for k in keywords_raw.split(',') if k.strip()]
+                        for keyword in keywords[:2]:
+                            status.text(f"🔍 {keyword} ({lang})")
                             
-                            for keyword in keywords[:2]:
-                                status.text(f"🔍 {keyword} ({lang})")
-                                
-                                if "YouTube" in platforms and youtube_key:
-                                    new_res = search_youtube(keyword, lang, youtube_key)
-                                    st.session_state.results.extend(new_res)
-                                
-                                time.sleep(1)
-                        
-                        current += 1
-                        progress.progress(min(current/total, 1.0))
+                            if "YouTube" in platforms and youtube_key:
+                                new_res = search_youtube(keyword, lang, youtube_key)
+                                st.session_state.results.extend(new_res)
+                            
+                            current += 1
+                            progress.progress(min(current/total, 1.0))
+                            time.sleep(1)
             
             status.success(f"✅ تم جلب {len(st.session_state.results)} نتيجة")
             time.sleep(1)
             st.rerun()
-else:
-    st.info("👆 ارفع ملف Excel من الشريط الجانبي للبدء")
+        else:
+            st.error("⚠️ أدخل مفتاح API أولاً")
 
 if st.session_state.results:
     st.markdown("---")
@@ -259,6 +219,8 @@ if st.session_state.results:
             with st.spinner("جاري الترجمة..."):
                 trans = translate_text(row['Content'], i)
                 st.info(f"**الترجمة:** {trans}")
+else:
+    st.info("👆 ارفع ملف Excel وأدخل API Key واضغط 'ابدأ الرصد'")
 
 st.markdown("---")
 st.markdown(
