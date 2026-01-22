@@ -138,8 +138,12 @@ if uploaded_file:
     # اللغات = أسماء الأعمدة (بعد العمود الأول)
     languages = [col for col in df.columns[1:] if 'Unnamed' not in str(col)]
     
-    # المسلسلات = القيم في العمود الأول
-    series_list = df.iloc[:, 0].dropna().tolist()
+    # المسلسلات = القيم في العمود الأول (تخطي الصف الأول إذا كان عناوين)
+    series_list = df.iloc[1:, 0].dropna().tolist()
+    
+    # إذا كان العمود الأول فاضي، استخدم كل الصفوف
+    if not series_list:
+        series_list = df.iloc[:, 0].dropna().tolist()
     
     # اختيار المسلسلات
     selected_series = st.multiselect(
@@ -171,17 +175,25 @@ if uploaded_file:
             
             # لكل مسلسل محدد
             for series in selected_series:
-                # الحصول على الصف الخاص بالمسلسل
+                # البحث عن الصف - جرب الطريقتين
                 series_row = df[df.iloc[:, 0] == series]
                 
                 if series_row.empty:
+                    # جرب البحث في كل الأعمدة
+                    series_row = df[df.eq(series).any(axis=1)]
+                
+                if series_row.empty:
+                    st.warning(f"⚠️ لم يتم العثور على {series}")
                     continue
                 
                 # لكل لغة محددة
                 for lang in selected_langs:
                     if lang in df.columns:
-                        # الحصول على الكلمات المفتاحية من الخلية
-                        keywords_raw = str(series_row[lang].values[0])
+                        # الحصول على الكلمات المفتاحية
+                        try:
+                            keywords_raw = str(series_row[lang].iloc[0])
+                        except:
+                            keywords_raw = ''
                         
                         if keywords_raw and keywords_raw != 'nan':
                             keywords = [k.strip() for k in keywords_raw.split(',') if k.strip()]
@@ -193,9 +205,10 @@ if uploaded_file:
                                     new_res = search_youtube(keyword, lang, youtube_key)
                                     st.session_state.results.extend(new_res)
                                 
-                                current += 1
-                                progress.progress(min(current/total, 1.0))
                                 time.sleep(1)
+                        
+                        current += 1
+                        progress.progress(min(current/total, 1.0))
             
             status.success(f"✅ تم جلب {len(st.session_state.results)} نتيجة")
             time.sleep(1)
