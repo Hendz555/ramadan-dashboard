@@ -1,6 +1,5 @@
 streamlit
 pandas
-plotly
-youtube-comment-downloader
-transformers
-torch
+openpyxl
+requests
+deep-translator
