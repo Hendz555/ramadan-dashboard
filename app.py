@@ -1,4 +1,3 @@
-```python
 import streamlit as st
 import pandas as pd
 from datetime import datetime
@@ -259,3 +258,4 @@ st.markdown(
     unsafe_allow_html=True
 )
 ```
+
