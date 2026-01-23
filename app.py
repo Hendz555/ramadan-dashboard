@@ -4,11 +4,13 @@ from datetime import datetime
 import time
 import requests
 from deep_translator import GoogleTranslator
+
 st.set_page_config(
     page_title="Ramadan Series Monitor 2026",
     page_icon="📡",
     layout="wide"
 )
+
 def inject_custom_css(dark_mode):
     bg_color = "#0e1117" if dark_mode else "#ffffff"
     text_color = "#fafafa" if dark_mode else "#000000"
@@ -33,12 +35,14 @@ def inject_custom_css(dark_mode):
         }}
     </style>
     """, unsafe_allow_html=True)
+
 if 'results' not in st.session_state:
     st.session_state.results = []
 if 'dark_mode' not in st.session_state:
     st.session_state.dark_mode = True
 if 'translations' not in st.session_state:
     st.session_state.translations = {}
+
 with st.sidebar:
     st.header("⚙️ إعدادات المنصة")
   
@@ -46,6 +50,7 @@ with st.sidebar:
     if dark_mode_btn != st.session_state.dark_mode:
         st.session_state.dark_mode = dark_mode_btn
         st.rerun()
+    
     st.divider()
   
     st.subheader("🔑 مفاتيح API")
@@ -74,7 +79,9 @@ with st.sidebar:
         st.session_state.results = []
         st.session_state.translations = {}
         st.rerun()
+
 inject_custom_css(st.session_state.dark_mode)
+
 def translate_text(text, index):
     if index in st.session_state.translations:
         return st.session_state.translations[index]
@@ -84,6 +91,7 @@ def translate_text(text, index):
         return translated
     except:
         return "خطأ في الترجمة"
+
 def search_youtube(keyword, language, api_key):
     results = []
     if not api_key:
@@ -92,7 +100,7 @@ def search_youtube(keyword, language, api_key):
         url = "https://www.googleapis.com/youtube/v3/search"
         params = {
             'part': 'snippet',
-            'q': f'"{keyword}"',  # استخدام علامات تنصيص للبحث عن العبارة الدقيقة
+            'q': f'"{keyword}"',  # البحث بالعبارة الدقيقة
             'type': 'video',
             'maxResults': 5,
             'key': api_key
@@ -117,24 +125,21 @@ def search_youtube(keyword, language, api_key):
     except Exception as e:
         st.warning(f"خطأ في YouTube: {str(e)}")
     return results
+
 st.title("📡 رادار ترجمات مسلسلات رمضان 2026")
 st.markdown("---")
+
 if not youtube_key and not news_key:
     st.warning("⚠️ أدخل مفتاح API في الشريط الجانبي لبدء الرصد")
+
 if uploaded_file:
     df = pd.read_excel(uploaded_file)
-    # نفترض:
-    # - الصف الأول (index 0) فيه أسماء المسلسلات (من العمود B وما بعد)
-    # - العمود الأول (A) فيه أسماء اللغات
-    # - باقي الخلايا فيها الكلمات المفتاحية لكل مسلسل ولغة
-    # استخراج أسماء المسلسلات (من الصف الأول، بداية من العمود الثاني)
-    series_names = df.iloc[0, 1:].dropna().tolist() # تجاهل الخلية A1 لو موجودة
-    # استخراج أسماء اللغات (من العمود الأول، بداية من الصف الثاني)
+    series_names = df.iloc[0, 1:].dropna().tolist()
     languages = df.iloc[1:, 0].dropna().tolist()
-    # عرض معاينة للملف
+
     with st.expander("عرض الكلمات المفتاحية"):
         st.dataframe(df.head(10))
-    # فلاتر الاختيار
+
     col_filter1, col_filter2 = st.columns(2)
     with col_filter1:
         selected_series = st.multiselect(
@@ -148,7 +153,8 @@ if uploaded_file:
             options=languages,
             default=languages[:3] if languages else []
         )
-    # زر البدء
+
+    # زر البدء مع الأيقونة 🚀
     if st.button("🚀 ابدأ الرصد", type="primary"):
         if not selected_series or not selected_langs:
             st.warning("⚠️ اختر على الأقل مسلسل واحد ولغة واحدة")
@@ -157,24 +163,22 @@ if uploaded_file:
             status = st.empty()
             total = len(selected_series) * len(selected_langs)
             current = 0
+
             for lang in selected_langs:
-                # إيجاد رقم الصف الخاص باللغة
                 lang_row_idx = df[df.iloc[:, 0] == lang].index[0] if lang in df.iloc[:, 0].values else None
                 if lang_row_idx is None:
                     continue
                 for ser in selected_series:
-                    # إيجاد رقم العمود الخاص بالمسلسل
                     ser_col_idx = df.columns[df.iloc[0] == ser][0] if ser in df.iloc[0].values else None
                     if ser_col_idx is None:
                         continue
                     keywords_raw = str(df.at[lang_row_idx, ser_col_idx])
                     if keywords_raw and keywords_raw.lower() != 'nan':
                         keywords = [k.strip() for k in keywords_raw.split(',') if k.strip()]
-                        for keyword in keywords[:2]: # أول كلمتين فقط
+                        for keyword in keywords[:2]:  # أول كلمتين فقط
                             status.text(f"🔍 {keyword} ({lang} - {ser})")
                             if "YouTube" in platforms and youtube_key:
                                 new_res = search_youtube(keyword, lang, youtube_key)
-                                # نضيف اسم المسلسل للنتيجة عشان نعرف نعرضه بعدين
                                 for res in new_res:
                                     res["Series"] = ser
                                 st.session_state.results.extend(new_res)
@@ -186,6 +190,7 @@ if uploaded_file:
             st.rerun()
         else:
             st.error("⚠️ أدخل مفتاح API أولاً")
+
 if st.session_state.results:
     st.markdown("---")
     col1, col2, col3 = st.columns(3)
@@ -197,6 +202,7 @@ if st.session_state.results:
     with col3:
         unique_platforms = len(set([r['Platform'] for r in st.session_state.results]))
         st.markdown(f'<div class="stats-box"><h2>{unique_platforms}</h2><p>عدد المنصات</p></div>', unsafe_allow_html=True)
+
     st.subheader("📊 نتائج الرصد")
     res_df = pd.DataFrame(st.session_state.results)
     c1, c2 = st.columns(2)
@@ -204,11 +210,13 @@ if st.session_state.results:
         lang_filter = st.multiselect("فلتر باللغة", res_df['Language'].unique())
     with c2:
         plat_filter = st.multiselect("فلتر بالمنصة", res_df['Platform'].unique())
+
     filtered_df = res_df.copy()
     if lang_filter:
         filtered_df = filtered_df[filtered_df['Language'].isin(lang_filter)]
     if plat_filter:
         filtered_df = filtered_df[filtered_df['Platform'].isin(plat_filter)]
+
     for i, row in filtered_df.iterrows():
         series_name = row.get('Series', 'غير محدد')
         st.markdown(f"""
@@ -225,6 +233,7 @@ if st.session_state.results:
             with st.spinner("جاري الترجمة..."):
                 trans = translate_text(row['Content'], i)
                 st.info(f"**الترجمة:** {trans}")
+
 st.markdown("---")
 st.markdown(
     "<div style='text-align: center; color: gray;'>Made with ❤️ for Ramadan 2026 Monitoring</div>",
