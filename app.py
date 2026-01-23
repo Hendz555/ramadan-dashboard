@@ -64,14 +64,19 @@ with st.sidebar:
         type="password",
         help="احصل عليه من newsapi.org"
     )
+    x_bearer_token = st.text_input(
+        "X (Twitter) Bearer Token",
+        type="password",
+        help="احصل عليه من developer.twitter.com → Projects & Apps → Keys and tokens → Bearer Token"
+    )
   
     st.divider()
     uploaded_file = st.file_uploader("ارفع ملف الإكسل", type=['xlsx'])
   
     platforms = st.multiselect(
         "المنصات:",
-        ["YouTube", "News"],
-        default=["YouTube"]
+        ["YouTube", "X", "News"],
+        default=["YouTube", "X"]
     )
   
     st.divider()
@@ -101,43 +106,87 @@ def search_youtube(keyword, language, api_key):
         url = "https://www.googleapis.com/youtube/v3/search"
         params = {
             'part': 'snippet',
-            'q': f'"{keyword}"',          # نحاول بالعبارة الدقيقة
+            'q': f'"{keyword}"',
             'type': 'video',
-            'maxResults': 10,             # نزود شوية عشان نضمن فلترة كويسة
+            'maxResults': 10,
             'key': api_key
         }
         response = requests.get(url, params=params, timeout=10)
         data = response.json()
       
         if 'items' in data:
-            keyword_lower = keyword.lower()  # عشان المقارنة تكون case-insensitive
-            
+            keyword_lower = keyword.lower()
             for item in data['items']:
                 title = item['snippet'].get('title', '').lower()
                 description = item['snippet'].get('description', '').lower()
                 
-                # شرط صارم: الكلمة المفتاحية لازم تكون موجودة بالضبط في العنوان أو الوصف
                 if keyword_lower in title or keyword_lower in description:
                     video_id = item['id'].get('videoId', '')
                     results.append({
                         "Platform": "YouTube",
-                        "Keyword": keyword,  # نحتفظ بالكلمة الأصلية
+                        "Keyword": keyword,
                         "Language": language,
                         "Content": f"{item['snippet'].get('title', '')} - {item['snippet'].get('description', '')[:100]}",
                         "Link": f"https://www.youtube.com/watch?v={video_id}",
                         "Date": datetime.now().strftime("%Y-%m-%d %H:%M")
                     })
-    
     except Exception as e:
         st.warning(f"خطأ في YouTube: {str(e)}")
+    
+    return results
+
+def search_x(keyword, language, bearer_token):
+    results = []
+    if not bearer_token:
+        return results
+    
+    try:
+        url = "https://api.twitter.com/2/tweets/search/recent"
+        headers = {
+            "Authorization": f"Bearer {bearer_token}"
+        }
+        params = {
+            'query': f'"{keyword}" lang:{language} -is:retweet',
+            'tweet.fields': 'created_at,text,author_id,lang',
+            'max_results': 10,
+            'expansions': 'author_id',
+            'user.fields': 'username,name'
+        }
+        
+        response = requests.get(url, headers=headers, params=params, timeout=15)
+        data = response.json()
+        
+        if 'data' in data:
+            users = {u['id']: u for u in data.get('includes', {}).get('users', [])}
+            
+            for tweet in data['data']:
+                text_lower = tweet['text'].lower()
+                keyword_lower = keyword.lower()
+                
+                if keyword_lower in text_lower:
+                    author = users.get(tweet['author_id'], {})
+                    username = author.get('username', 'غير معروف')
+                    name = author.get('name', '')
+                    
+                    results.append({
+                        "Platform": "X",
+                        "Keyword": keyword,
+                        "Language": language,
+                        "Content": f"@{username} ({name}): {tweet['text'][:150]}...",
+                        "Link": f"https://x.com/{username}/status/{tweet['id']}",
+                        "Date": tweet.get('created_at', datetime.now().strftime("%Y-%m-%d %H:%M"))
+                    })
+    
+    except Exception as e:
+        st.warning(f"خطأ في البحث على X: {str(e)}")
     
     return results
 
 st.title("📡 رادار ترجمات مسلسلات رمضان 2026")
 st.markdown("---")
 
-if not youtube_key and not news_key:
-    st.warning("⚠️ أدخل مفتاح API في الشريط الجانبي لبدء الرصد")
+if not youtube_key and not news_key and not x_bearer_token:
+    st.warning("⚠️ أدخل مفتاح API واحد على الأقل في الشريط الجانبي لبدء الرصد")
 
 if uploaded_file:
     df = pd.read_excel(uploaded_file)
@@ -161,11 +210,10 @@ if uploaded_file:
             default=languages[:3] if languages else []
         )
 
-    # زر البدء مع الأيقونة 🚀
     if st.button("🚀 ابدأ الرصد", type="primary"):
         if not selected_series or not selected_langs:
             st.warning("⚠️ اختر على الأقل مسلسل واحد ولغة واحدة")
-        elif youtube_key or news_key:
+        elif youtube_key or news_key or x_bearer_token:
             progress = st.progress(0)
             status = st.empty()
             total = len(selected_series) * len(selected_langs)
@@ -175,23 +223,34 @@ if uploaded_file:
                 lang_row_idx = df[df.iloc[:, 0] == lang].index[0] if lang in df.iloc[:, 0].values else None
                 if lang_row_idx is None:
                     continue
+                
                 for ser in selected_series:
                     ser_col_idx = df.columns[df.iloc[0] == ser][0] if ser in df.iloc[0].values else None
                     if ser_col_idx is None:
                         continue
+                    
                     keywords_raw = str(df.at[lang_row_idx, ser_col_idx])
                     if keywords_raw and keywords_raw.lower() != 'nan':
                         keywords = [k.strip() for k in keywords_raw.split(',') if k.strip()]
                         for keyword in keywords[:2]:  # أول كلمتين فقط
                             status.text(f"🔍 {keyword} ({lang} - {ser})")
+                            
                             if "YouTube" in platforms and youtube_key:
                                 new_res = search_youtube(keyword, lang, youtube_key)
                                 for res in new_res:
                                     res["Series"] = ser
                                 st.session_state.results.extend(new_res)
+                            
+                            if "X" in platforms and x_bearer_token:
+                                new_res_x = search_x(keyword, lang, x_bearer_token)
+                                for res in new_res_x:
+                                    res["Series"] = ser
+                                st.session_state.results.extend(new_res)
+                            
                             current += 1
                             progress.progress(min(current / total, 1.0))
-                            time.sleep(1)
+                            time.sleep(1)  # عشان ما نضغطش على الـ API كتير
+
             status.success(f"✅ تم جلب {len(st.session_state.results)} نتيجة")
             time.sleep(1)
             st.rerun()
@@ -226,11 +285,13 @@ if st.session_state.results:
 
     for i, row in filtered_df.iterrows():
         series_name = row.get('Series', 'غير محدد')
+        platform_icon = '🐦' if row['Platform'] == 'X' else '📺'
+        
         st.markdown(f"""
         <div class="result-card">
-            <h4>📺 {row['Platform']} | 🌐 {row['Language']} | 🎬 {series_name}</h4>
+            <h4>{platform_icon} {row['Platform']} | 🌐 {row['Language']} | 🎬 {series_name}</h4>
             <p><strong>الكلمة المفتاحية:</strong> {row['Keyword']}</p>
-            <p>{row['Content'][:250]}</p>
+            <p>{row['Content']}</p>
             <p><small>📅 {row['Date']}</small></p>
             <a href="{row['Link']}" target="_blank">🔗 عرض المصدر</a>
         </div>
@@ -246,4 +307,3 @@ st.markdown(
     "<div style='text-align: center; color: gray;'>Made with ❤️ for Ramadan 2026 Monitoring</div>",
     unsafe_allow_html=True
 )
-
