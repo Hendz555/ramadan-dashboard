@@ -133,71 +133,78 @@ if not youtube_key and not news_key:
 
 if uploaded_file:
     df = pd.read_excel(uploaded_file)
-   
-    # التعديل: نفترض الآن أن اللغات هي صفوف، والمسلسلات هي أعمدة. لذا، نعكس التعامل عبر transpose
-    df = df.T  # نقل الصفوف إلى أعمدة والعكس، ليصبح الأعمدة اللغات كما يتوقع الكود الأصلي
-    df.columns = df.iloc[0]  # جعل الصف الأول (أسماء المسلسلات الأصلية) أعمدة جديدة (الآن لغات؟ انتظر، لا.
-    # انتظر، إذا كانت الأصلي: صفوف = لغات، أعمدة = مسلسلات.
-    # ثم T: صفوف = مسلسلات، أعمدة = لغات.
-    # نعم، الآن يتطابق مع الافتراض الأصلي للكود (أعمدة = لغات).
-    # إزالة الصف الأول إذا أصبح headers.
-    df = df[1:]  # إذا كان الصف الأول هو headers بعد transpose، أزل إذا لزم.
-    # لتبسيط، إذا كان الملف بدون index، بعد T، df.columns هي الصفوف الأصلية (لغات)، لكن قد تكون أرقام.
-    # لنجعلها صحيحة: افترض أن الملف الأصلي لديه الصف الأول أسماء المسلسلات، العمود الأول لغات؟
 
-    # للدقة، دعنا نعدل الاستخراج بدلاً من transpose إذا كان معقد.
-    # بديل: استخراج اللغات من الصفوف.
+    # نفترض:
+    # - الصف الأول (index 0) فيه أسماء المسلسلات (من العمود B وما بعد)
+    # - العمود الأول (A) فيه أسماء اللغات
+    # - باقي الخلايا فيها الكلمات المفتاحية لكل مسلسل ولغة
 
-    # دعنا نغير الكود بدلاً من ذلك.
-    # إزالة transpose وتغيير الـ languages.
-    # languages = df.index.tolist() إذا كان index اللغات، لكن افترض no index، فالعمدة الأول هو اللغة.
+    # استخراج أسماء المسلسلات (من الصف الأول، بداية من العمود الثاني)
+    series_names = df.iloc[0, 1:].dropna().tolist()  # تجاهل الخلية A1 لو موجودة
 
-    # افترض العمود الأول 'اللغة'، الأعمدة الباقية مسلسلات.
+    # استخراج أسماء اللغات (من العمود الأول، بداية من الصف الثاني)
+    languages = df.iloc[1:, 0].dropna().tolist()
 
-    if 'اللغة' in df.columns:  # للتعامل مع اسم العمود
-        lang_column = 'اللغة'
-    else:
-        lang_column = df.columns[0]  # افترض الأول هو اللغة
-
-    languages = df[lang_column].tolist()
-
-    series_names = [col for col in df.columns if col != lang_column]
-
+    # عرض معاينة للملف
     with st.expander("عرض الكلمات المفتاحية"):
-        st.dataframe(df.head())
+        st.dataframe(df.head(10))
 
-    selected_langs = st.multiselect(
-        "اختر اللغات:",
-        languages,
-        default=languages[:2] if len(languages)>=2 else languages
-    )
+    # فلاتر الاختيار
+    col_filter1, col_filter2 = st.columns(2)
 
+    with col_filter1:
+        selected_series = st.multiselect(
+            "اختر المسلسلات:",
+            options=series_names,
+            default=series_names[:3] if series_names else []
+        )
+
+    with col_filter2:
+        selected_langs = st.multiselect(
+            "اختر اللغات:",
+            options=languages,
+            default=languages[:3] if languages else []
+        )
+
+    # زر البدء
     if st.button("🚀 ابدأ الرصد", type="primary"):
-        if youtube_key or news_key:
+        if not selected_series or not selected_langs:
+            st.warning("⚠️ اختر على الأقل مسلسل واحد ولغة واحدة")
+        elif youtube_key or news_key:
             progress = st.progress(0)
             status = st.empty()
 
-            total = len(selected_langs) * len(series_names)
+            total = len(selected_series) * len(selected_langs)
             current = 0
 
             for lang in selected_langs:
-                # احصل على الصف لللغة
-                row = df[df[lang_column] == lang].iloc[0]
+                # إيجاد رقم الصف الخاص باللغة
+                lang_row_idx = df[df.iloc[:, 0] == lang].index[0] if lang in df.iloc[:, 0].values else None
+                if lang_row_idx is None:
+                    continue
 
-                for ser in series_names:
-                    keywords_raw = str(row.get(ser, ''))
-                    if keywords_raw and keywords_raw != 'nan':
+                for ser in selected_series:
+                    # إيجاد رقم العمود الخاص بالمسلسل
+                    ser_col_idx = df.columns[df.iloc[0] == ser][0] if ser in df.iloc[0].values else None
+                    if ser_col_idx is None:
+                        continue
+
+                    keywords_raw = str(df.at[lang_row_idx, ser_col_idx])
+                    if keywords_raw and keywords_raw.lower() != 'nan':
                         keywords = [k.strip() for k in keywords_raw.split(',') if k.strip()]
 
-                        for keyword in keywords[:2]:
-                            status.text(f"🔍 {keyword} ({lang})")
+                        for keyword in keywords[:2]:  # أول كلمتين فقط
+                            status.text(f"🔍 {keyword} ({lang} - {ser})")
 
                             if "YouTube" in platforms and youtube_key:
                                 new_res = search_youtube(keyword, lang, youtube_key)
+                                # نضيف اسم المسلسل للنتيجة عشان نعرف نعرضه بعدين
+                                for res in new_res:
+                                    res["Series"] = ser
                                 st.session_state.results.extend(new_res)
 
                             current += 1
-                            progress.progress(min(current/total, 1.0))
+                            progress.progress(min(current / total, 1.0))
                             time.sleep(1)
 
             status.success(f"✅ تم جلب {len(st.session_state.results)} نتيجة")
@@ -235,25 +242,25 @@ if st.session_state.results:
         filtered_df = filtered_df[filtered_df['Platform'].isin(plat_filter)]
 
     for i, row in filtered_df.iterrows():
+        series_name = row.get('Series', 'غير محدد')
         st.markdown(f"""
         <div class="result-card">
-            <h4>📺 {row['Platform']} | 🌐 {row['Language']}</h4>
+            <h4>📺 {row['Platform']} | 🌐 {row['Language']} | 🎬 {series_name}</h4>
             <p><strong>الكلمة المفتاحية:</strong> {row['Keyword']}</p>
             <p>{row['Content'][:250]}</p>
             <p><small>📅 {row['Date']}</small></p>
             <a href="{row['Link']}" target="_blank">🔗 عرض المصدر</a>
         </div>
         """, unsafe_allow_html=True)
-
+        
         if st.button("🔄 ترجم للعربية", key=f"trans_{i}"):
             with st.spinner("جاري الترجمة..."):
                 trans = translate_text(row['Content'], i)
                 st.info(f"**الترجمة:** {trans}")
-else:
-    st.info("👆 ارفع ملف Excel وأدخل API Key واضغط 'ابدأ الرصد'")
 
 st.markdown("---")
 st.markdown(
     "<div style='text-align: center; color: gray;'>Made with ❤️ for Ramadan 2026 Monitoring</div>",
     unsafe_allow_html=True
 )
+
