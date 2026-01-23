@@ -96,34 +96,41 @@ def search_youtube(keyword, language, api_key):
     results = []
     if not api_key:
         return results
+    
     try:
         url = "https://www.googleapis.com/youtube/v3/search"
         params = {
             'part': 'snippet',
-            'q': f'"{keyword}"',  # البحث بالعبارة الدقيقة
+            'q': f'"{keyword}"',          # نحاول بالعبارة الدقيقة
             'type': 'video',
-            'maxResults': 5,
+            'maxResults': 10,             # نزود شوية عشان نضمن فلترة كويسة
             'key': api_key
         }
         response = requests.get(url, params=params, timeout=10)
         data = response.json()
       
         if 'items' in data:
+            keyword_lower = keyword.lower()  # عشان المقارنة تكون case-insensitive
+            
             for item in data['items']:
-                video_id = item['id'].get('videoId', '')
-                title = item['snippet'].get('title', '')
-                description = item['snippet'].get('description', '')[:100]
-              
-                results.append({
-                    "Platform": "YouTube",
-                    "Keyword": keyword,
-                    "Language": language,
-                    "Content": f"{title} - {description}",
-                    "Link": f"https://www.youtube.com/watch?v={video_id}",
-                    "Date": datetime.now().strftime("%Y-%m-%d %H:%M")
-                })
+                title = item['snippet'].get('title', '').lower()
+                description = item['snippet'].get('description', '').lower()
+                
+                # شرط صارم: الكلمة المفتاحية لازم تكون موجودة بالضبط في العنوان أو الوصف
+                if keyword_lower in title or keyword_lower in description:
+                    video_id = item['id'].get('videoId', '')
+                    results.append({
+                        "Platform": "YouTube",
+                        "Keyword": keyword,  # نحتفظ بالكلمة الأصلية
+                        "Language": language,
+                        "Content": f"{item['snippet'].get('title', '')} - {item['snippet'].get('description', '')[:100]}",
+                        "Link": f"https://www.youtube.com/watch?v={video_id}",
+                        "Date": datetime.now().strftime("%Y-%m-%d %H:%M")
+                    })
+    
     except Exception as e:
         st.warning(f"خطأ في YouTube: {str(e)}")
+    
     return results
 
 st.title("📡 رادار ترجمات مسلسلات رمضان 2026")
@@ -239,3 +246,4 @@ st.markdown(
     "<div style='text-align: center; color: gray;'>Made with ❤️ for Ramadan 2026 Monitoring</div>",
     unsafe_allow_html=True
 )
+
