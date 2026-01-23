@@ -257,5 +257,3 @@ st.markdown(
     "<div style='text-align: center; color: gray;'>Made with ❤️ for Ramadan 2026 Monitoring</div>",
     unsafe_allow_html=True
 )
-```
-
