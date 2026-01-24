@@ -235,21 +235,23 @@ if uploaded_file:
                         for keyword in keywords[:2]:  # أول كلمتين فقط
                             status.text(f"🔍 {keyword} ({lang} - {ser})")
                             
+                            # نتايج YouTube
                             if "YouTube" in platforms and youtube_key:
-                                new_res = search_youtube(keyword, lang, youtube_key)
-                                for res in new_res:
+                                youtube_results = search_youtube(keyword, lang, youtube_key)
+                                for res in youtube_results:
                                     res["Series"] = ser
-                                st.session_state.results.extend(new_res)
+                                st.session_state.results.extend(youtube_results)
                             
+                            # نتايج X
                             if "X" in platforms and x_bearer_token:
-                                new_res_x = search_x(keyword, lang, x_bearer_token)
-                                for res in new_res_x:
+                                x_results = search_x(keyword, lang, x_bearer_token)
+                                for res in x_results:
                                     res["Series"] = ser
-                                st.session_state.results.extend(new_res)
+                                st.session_state.results.extend(x_results)
                             
                             current += 1
                             progress.progress(min(current / total, 1.0))
-                            time.sleep(1)  # عشان ما نضغطش على الـ API كتير
+                            time.sleep(1)  # تأخير بسيط عشان ما نضغطش على الـ APIs
 
             status.success(f"✅ تم جلب {len(st.session_state.results)} نتيجة")
             time.sleep(1)
